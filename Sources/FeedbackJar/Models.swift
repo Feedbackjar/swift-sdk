@@ -25,3 +25,17 @@ public struct FeedbackListResult: Sendable {
     public let posts: [FeedbackPost]
     public let nextCursor: String?
 }
+
+/// Widget configuration for this organization, as set in the FeedbackJar dashboard.
+public struct WidgetConfig: Sendable {
+    /// Whether the org asks submitters for their name ("Ask for Name").
+    public let collectName: Bool
+    /// Whether the org asks submitters for their email ("Ask for Email").
+    public let collectEmail: Bool
+}
+
+/// Submitter identity (name/email) remembered across `FeedbackJar.submit` calls.
+public struct FeedbackIdentity: Sendable {
+    public let name: String?
+    public let email: String?
+}

@@ -38,7 +38,7 @@ struct MyApp: App {
 
 ## Submitting feedback
 
-Submissions are **anonymous**. Each submission automatically carries device metadata (iOS version, device model, screen size, app version, locale).
+Submissions can be anonymous, or include a submitter name/email if you collect them in your own form. Each submission automatically carries device metadata (iOS version, device model, screen size, app version, locale).
 
 ### async/await (recommended)
 
@@ -66,6 +66,32 @@ FeedbackJar.shared.submit(userText) { result in
 ```
 
 > Note: the server applies rate limiting (5 submissions per 15 minutes per IP). Handle the failure case in your UI.
+
+## Checking whether to ask for name/email
+
+The organization's dashboard settings ("Ask for Name" / "Ask for Email") control whether submitters should be prompted. The SDK doesn't render any UI itself, so read this before building your own form:
+
+```swift
+let config = await FeedbackJar.shared.getConfig()
+if case .success(let value) = config {
+    showNameField = value.collectName
+    showEmailField = value.collectEmail
+}
+```
+
+## Remembering submitter identity
+
+Name/email passed to `submit` are automatically remembered and reused on later calls, so you only need to ask once. Manage this directly with `setIdentity` / `getIdentity` / `clearIdentity`:
+
+```swift
+FeedbackJar.shared.setIdentity(name: "Ada Lovelace", email: "ada@example.com")
+
+let identity = FeedbackJar.shared.getIdentity()
+print(identity.name ?? "")
+
+// e.g. on logout
+FeedbackJar.shared.clearIdentity()
+```
 
 ## Listing feedback
 
@@ -116,6 +142,11 @@ FeedbackJar.shared.listFeedback(limit: 20) { result in
 | `submit(_ content:, completion:)` | Callback variant, main-thread safe. |
 | `listFeedback(boardId:limit:cursor:) async -> Result<FeedbackListResult, Error>` | List public feedback. `limit` is clamped to 1–50. |
 | `listFeedback(boardId:limit:cursor:completion:)` | Callback variant. |
+| `getConfig() async -> Result<WidgetConfig, Error>` | Fetch whether the org asks for name/email. |
+| `getConfig(completion:)` | Callback variant. |
+| `setIdentity(name:email:)` | Remember a submitter's name/email for future `submit` calls. |
+| `getIdentity() -> FeedbackIdentity` | The currently remembered identity, if any. |
+| `clearIdentity()` | Forget the remembered identity. |
 
 ### `FeedbackResponse`
 
@@ -157,9 +188,28 @@ public struct FeedbackListResult {
 }
 ```
 
+### `WidgetConfig`
+
+```swift
+public struct WidgetConfig {
+    let collectName: Bool   // org asks for the submitter's name
+    let collectEmail: Bool  // org asks for the submitter's email
+}
+```
+
+### `FeedbackIdentity`
+
+```swift
+public struct FeedbackIdentity {
+    let name: String?
+    let email: String?
+}
+```
+
 ## Notes
 
-- Only **anonymous submission** is supported in this version — no user identity or email is sent.
+- Feedback can be submitted anonymously, or with a name/email — the SDK never requires either.
+- Name/email are persisted in `UserDefaults` on-device (no extra dependency) so they survive app restarts.
 - Private boards and non-public posts are never returned by `listFeedback`.
 - All methods return a Swift `Result`; nothing throws on network/HTTP errors.
 - No dependencies beyond the Swift standard library and `Foundation`/`UIKit`.

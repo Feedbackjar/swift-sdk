@@ -2,6 +2,8 @@ import Foundation
 
 private struct SubmitRequest: Encodable {
     let content: String
+    let email: String?
+    let userName: String?
     let metadata: DeviceMetadata
 }
 
@@ -34,19 +36,36 @@ private struct ListResponseBody: Decodable {
     let nextCursor: String?
 }
 
+private struct ConfigResponseBody: Decodable {
+    let collectName: Bool?
+    let collectEmail: Bool?
+}
+
 internal final class ApiClient: Sendable {
     private let session = URLSession.shared
     private let baseURL = URL(string: "https://api.feedbackjar.com")!
     private let decoder = JSONDecoder()
+    private let appId: String?
 
-    func submit(widgetId: String, content: String, metadata: DeviceMetadata) async -> Result<FeedbackResponse, Error> {
+    init(appId: String? = nil) {
+        self.appId = appId
+    }
+
+    private func applyAppIdHeader(to request: inout URLRequest) {
+        if let appId, !appId.isEmpty {
+            request.setValue(appId, forHTTPHeaderField: "X-FeedbackJar-App-Id")
+        }
+    }
+
+    func submit(widgetId: String, content: String, email: String? = nil, name: String? = nil, metadata: DeviceMetadata) async -> Result<FeedbackResponse, Error> {
         let url = baseURL.appendingPathComponent("widget/\(widgetId)/submit")
         var request = URLRequest(url: url)
         request.httpMethod = "POST"
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        applyAppIdHeader(to: &request)
 
         do {
-            request.httpBody = try JSONEncoder().encode(SubmitRequest(content: content, metadata: metadata))
+            request.httpBody = try JSONEncoder().encode(SubmitRequest(content: content, email: email, userName: name, metadata: metadata))
             let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 return .failure(FeedbackJarNetworkError.invalidResponse)
@@ -75,8 +94,11 @@ internal final class ApiClient: Sendable {
 
         guard let url = components.url else { return .failure(FeedbackJarNetworkError.invalidResponse) }
 
+        var request = URLRequest(url: url)
+        applyAppIdHeader(to: &request)
+
         do {
-            let (data, response) = try await session.data(for: URLRequest(url: url))
+            let (data, response) = try await session.data(for: request)
             guard let http = response as? HTTPURLResponse else {
                 return .failure(FeedbackJarNetworkError.invalidResponse)
             }
@@ -96,6 +118,29 @@ internal final class ApiClient: Sendable {
                     )
                 },
                 nextCursor: parsed.nextCursor
+            ))
+        } catch {
+            return .failure(error)
+        }
+    }
+
+    func getConfig(widgetId: String) async -> Result<WidgetConfig, Error> {
+        let url = baseURL.appendingPathComponent("widget/\(widgetId)/config")
+        var request = URLRequest(url: url)
+        applyAppIdHeader(to: &request)
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return .failure(FeedbackJarNetworkError.invalidResponse)
+            }
+            guard (200...299).contains(http.statusCode) else {
+                return .failure(FeedbackJarNetworkError.httpError(http.statusCode))
+            }
+            let parsed = try decoder.decode(ConfigResponseBody.self, from: data)
+            return .success(WidgetConfig(
+                collectName: parsed.collectName ?? false,
+                collectEmail: parsed.collectEmail ?? false
             ))
         } catch {
             return .failure(error)
