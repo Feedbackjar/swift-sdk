@@ -67,6 +67,17 @@ FeedbackJar.shared.submit(userText) { result in
 
 > Note: the server applies rate limiting (5 submissions per 15 minutes per IP). Handle the failure case in your UI.
 
+## Custom properties
+
+Attach your own key/value context to a submission — merged into the auto-collected `app` metadata (alongside `bundleId`, `version`, `build`). Values should be `String`, `Int`, `Double`, or `Bool`; nested structures aren't supported.
+
+```swift
+let result = await FeedbackJar.shared.submit(
+    userText,
+    properties: ["flavor": "foss", "plan": "pro"]
+)
+```
+
 ## Checking whether to ask for name/email
 
 The organization's dashboard settings ("Ask for Name" / "Ask for Email") control whether submitters should be prompted. The SDK doesn't render any UI itself, so read this before building your own form:
@@ -138,8 +149,8 @@ FeedbackJar.shared.listFeedback(limit: 20) { result in
 | Method | Description |
 | --- | --- |
 | `configure(widgetId:)` | Configure the SDK. Call once before anything else. |
-| `submit(_ content:) async -> Result<FeedbackResponse, Error>` | Submit anonymous feedback. |
-| `submit(_ content:, completion:)` | Callback variant, main-thread safe. |
+| `submit(_ content:, email:, name:, properties:) async -> Result<FeedbackResponse, Error>` | Submit feedback, optionally with custom properties merged into `app` metadata. |
+| `submit(_ content:, email:, name:, properties:, completion:)` | Callback variant, main-thread safe. |
 | `listFeedback(boardId:limit:cursor:) async -> Result<FeedbackListResult, Error>` | List public feedback. `limit` is clamped to 1–50. |
 | `listFeedback(boardId:limit:cursor:completion:)` | Callback variant. |
 | `getConfig() async -> Result<WidgetConfig, Error>` | Fetch whether the org asks for name/email. |

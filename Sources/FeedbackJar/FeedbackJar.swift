@@ -73,20 +73,23 @@ public final class FeedbackJar: @unchecked Sendable {
     ///   - content: The feedback text.
     ///   - email: Optional submitter email (for headless/anonymous submissions).
     ///   - name: Optional submitter name (for headless/anonymous submissions).
-    public func submit(_ content: String, email: String? = nil, name: String? = nil) async -> Result<FeedbackResponse, Error> {
+    ///   - properties: Optional custom key/value pairs (e.g. `["flavor": "foss"]`) merged into
+    ///     the auto-collected `app` metadata. Values should be String, Int, Double, or Bool —
+    ///     nested structures aren't supported.
+    public func submit(_ content: String, email: String? = nil, name: String? = nil, properties: [String: Any]? = nil) async -> Result<FeedbackResponse, Error> {
         guard let id = widgetId else { return .failure(FeedbackJarError.notInitialized) }
         guard let client else { return .failure(FeedbackJarError.notInitialized) }
         if email != nil || name != nil {
             setIdentity(name: name, email: email)
         }
         let identity = getIdentity()
-        let metadata = await MainActor.run { MetadataCollector.collect() }
+        let metadata = await MainActor.run { MetadataCollector.collect(properties: properties) }
         return await client.submit(widgetId: id, content: content, email: email ?? identity.email, name: name ?? identity.name, metadata: metadata)
     }
 
     /// Callback variant. Safe to call from the main thread.
-    public func submit(_ content: String, email: String? = nil, name: String? = nil, completion: @escaping @Sendable (Result<FeedbackResponse, Error>) -> Void) {
-        Task { completion(await submit(content, email: email, name: name)) }
+    public func submit(_ content: String, email: String? = nil, name: String? = nil, properties: [String: Any]? = nil, completion: @escaping @Sendable (Result<FeedbackResponse, Error>) -> Void) {
+        Task { completion(await submit(content, email: email, name: name, properties: properties)) }
     }
 
     /// List public feedback for this widget's organization.
