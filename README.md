@@ -1,6 +1,6 @@
 # FeedbackJar iOS SDK
 
-A lightweight iOS SDK for collecting user feedback. You build your own form — the SDK handles submission (enriched with device metadata) and fetching the public feedback list.
+A lightweight iOS SDK for collecting user feedback. Drop in the prebuilt `FeedbackJarBoard` UI, or build your own form — the SDK handles submission (enriched with device metadata), fetching the public feedback list, and guest upvoting and commenting.
 
 - **Min iOS:** 15.0
 - **Package:** Swift Package Manager
@@ -35,6 +35,54 @@ struct MyApp: App {
     }
 }
 ```
+
+## Prebuilt UI
+
+Don't want to build a form? Drop in `FeedbackJarBoard` — a complete feedback board
+with list, upvoting, detail view, comment threads, and a submission screen. It is
+part of the `FeedbackJar` product and adds **no dependency** (SwiftUI is a system
+framework). Configure the SDK first, then:
+
+```swift
+import FeedbackJar
+import SwiftUI
+
+struct FeedbackTab: View {
+    var body: some View {
+        FeedbackJarBoard()
+    }
+}
+```
+
+### Accent colour
+
+One colour drives the vote state, the primary button, and links. It defaults to
+FeedbackJar red (`#e5484d`); override it and, optionally, restrict the feed to one
+board:
+
+```swift
+FeedbackJarBoard(
+    accentColor: Color(red: 0.11, green: 0.42, blue: 0.92),
+    boardId: "board_123"
+)
+```
+
+### UIKit
+
+Use the `UIHostingController` subclass:
+
+```swift
+let vc = FeedbackJarViewController()                 // or (accentColor:boardId:)
+navigationController?.pushViewController(vc, animated: true)
+```
+
+The board reads `getConfig()` on appear: it hides vote pills when guest voting is
+off, hides the comment composer when guest commenting is off, and shows the
+name/email fields on the submission screen only when the org asks for them
+(prefilled from — and saved back to — the remembered identity). Every call goes
+through the SDK's `Result` type, so the UI never throws; failures show an inline
+message with the server's text and a retry where it makes sense. It follows the
+system light/dark setting.
 
 ## Submitting feedback
 
@@ -78,15 +126,17 @@ let result = await FeedbackJar.shared.submit(
 )
 ```
 
-## Checking whether to ask for name/email
+## Checking widget config
 
-The organization's dashboard settings ("Ask for Name" / "Ask for Email") control whether submitters should be prompted. The SDK doesn't render any UI itself, so read this before building your own form:
+The organization's dashboard settings control what your UI should show. The SDK doesn't render any UI itself, so read this first:
 
 ```swift
 let config = await FeedbackJar.shared.getConfig()
 if case .success(let value) = config {
-    showNameField = value.collectName
-    showEmailField = value.collectEmail
+    showNameField  = value.collectName    // "Ask for Name"
+    showEmailField = value.collectEmail   // "Ask for Email"
+    showVoteButton = value.allowVotes     // guest upvoting enabled
+    showComments   = value.allowComments  // guest commenting enabled
 }
 ```
 
@@ -142,6 +192,67 @@ FeedbackJar.shared.listFeedback(limit: 20) { result in
 }
 ```
 
+## Voting
+
+Each install gets a random anonymous id (persisted in `UserDefaults`, reset on reinstall — never a device id). It's sent automatically on every vote, comment, and `listFeedback` call, so `FeedbackPost.hasVoted` and `VoteState.hasVoted` reflect this install.
+
+Voting requires guest voting to be enabled for the project (`WidgetConfig.allowVotes`). All calls are idempotent.
+
+```swift
+// Upvote
+let result = await FeedbackJar.shared.vote(postId: post.id)
+if case .success(let state) = result {
+    print("\(state.upvotes) upvotes, voted: \(state.hasVoted)")
+}
+
+// Remove the upvote
+_ = await FeedbackJar.shared.unvote(postId: post.id)
+
+// Read current state
+let state = await FeedbackJar.shared.voteState(postId: post.id)
+```
+
+Callback variants exist for all three (`vote(postId:completion:)`, etc.).
+
+> Rate limits: 60 vote/unvote calls per minute per IP.
+
+## Comments
+
+Comments are public two-level threads — a root comment's `replies` are its direct replies, and replies never have replies of their own. Listing needs no identity; posting sends the anonymous id.
+
+```swift
+// List (paginated)
+let result = await FeedbackJar.shared.listComments(postId: post.id, limit: 20)
+if case .success(let page) = result {
+    for comment in page.comments {
+        print("\(comment.authorName): \(comment.content)")
+        for reply in comment.replies {
+            print("  ↳ \(reply.authorName): \(reply.content)")
+        }
+    }
+    // page.nextCursor is non-nil when more pages exist
+}
+```
+
+Posting a comment requires guest comments to be enabled (`WidgetConfig.allowComments`). `name`/`email` fall back to the remembered identity; `email` is used only for reply notifications and is never linked to a real account.
+
+```swift
+// Top-level comment
+let result = await FeedbackJar.shared.addComment(postId: post.id, content: "Please add dark mode!")
+if case .success(let commentId) = result { print("Posted: \(commentId)") }
+
+// Reply to a root comment
+_ = await FeedbackJar.shared.addComment(
+    postId: post.id,
+    content: "Agreed",
+    parentId: rootComment.id
+)
+```
+
+Callback variants exist for both (`listComments(postId:limit:cursor:completion:)`, `addComment(postId:content:parentId:name:email:completion:)`).
+
+> Rate limits: 10 comment posts per minute per IP.
+
 ## API reference
 
 ### `FeedbackJar`
@@ -153,9 +264,15 @@ FeedbackJar.shared.listFeedback(limit: 20) { result in
 | `submit(_ content:, email:, name:, properties:, completion:)` | Callback variant, main-thread safe. |
 | `listFeedback(boardId:limit:cursor:) async -> Result<FeedbackListResult, Error>` | List public feedback. `limit` is clamped to 1–50. |
 | `listFeedback(boardId:limit:cursor:completion:)` | Callback variant. |
-| `getConfig() async -> Result<WidgetConfig, Error>` | Fetch whether the org asks for name/email. |
+| `getConfig() async -> Result<WidgetConfig, Error>` | Fetch org config (name/email prompts, voting, commenting). |
 | `getConfig(completion:)` | Callback variant. |
-| `setIdentity(name:email:)` | Remember a submitter's name/email for future `submit` calls. |
+| `vote(postId:) async -> Result<VoteState, Error>` | Upvote a post as this install's guest. Idempotent. |
+| `unvote(postId:) async -> Result<VoteState, Error>` | Remove this install's upvote. Idempotent. |
+| `voteState(postId:) async -> Result<VoteState, Error>` | Current upvote count and whether this install voted. |
+| `listComments(postId:limit:cursor:) async -> Result<FeedbackCommentListResult, Error>` | List public comment threads. `limit` clamped to 1–50. |
+| `addComment(postId:content:parentId:name:email:) async -> Result<String, Error>` | Post a comment or reply as this install's guest. Returns the comment id. |
+| `vote` / `unvote` / `voteState` / `listComments` / `addComment` `(…completion:)` | Callback variants. |
+| `setIdentity(name:email:)` | Remember a submitter's name/email for future `submit` calls; best-effort synced to the server. |
 | `getIdentity() -> FeedbackIdentity` | The currently remembered identity, if any. |
 | `clearIdentity()` | Forget the remembered identity. |
 
@@ -184,6 +301,7 @@ public struct FeedbackPost {
     let voteCount: Int
     let commentCount: Int
     let upvotes: Int
+    let hasVoted: Bool        // whether this install's anon id upvoted this post
     let authorName: String?
     let createdAt: String    // ISO-8601
     let updatedAt: String    // ISO-8601
@@ -203,8 +321,10 @@ public struct FeedbackListResult {
 
 ```swift
 public struct WidgetConfig {
-    let collectName: Bool   // org asks for the submitter's name
-    let collectEmail: Bool  // org asks for the submitter's email
+    let collectName: Bool     // org asks for the submitter's name
+    let collectEmail: Bool    // org asks for the submitter's email
+    let allowVotes: Bool      // guest upvoting enabled for this project
+    let allowComments: Bool   // guest commenting enabled for this project
 }
 ```
 
@@ -217,10 +337,44 @@ public struct FeedbackIdentity {
 }
 ```
 
+### `VoteState`
+
+```swift
+public struct VoteState {
+    let upvotes: Int
+    let hasVoted: Bool  // whether this install's anon id upvoted
+}
+```
+
+### `FeedbackComment`
+
+```swift
+public struct FeedbackComment {
+    let id: String
+    let content: String
+    let authorName: String
+    let authorRole: String?   // "owner" / "admin" / "member" for team members, else nil
+    let isBot: Bool
+    let parentId: String?     // nil for root comments
+    let createdAt: String     // ISO-8601
+    let replies: [FeedbackComment]  // direct replies (empty for a reply)
+}
+```
+
+### `FeedbackCommentListResult`
+
+```swift
+public struct FeedbackCommentListResult {
+    let comments: [FeedbackComment]
+    let nextCursor: String?   // nil when there are no more pages
+}
+```
+
 ## Notes
 
 - Feedback can be submitted anonymously, or with a name/email — the SDK never requires either.
 - Name/email are persisted in `UserDefaults` on-device (no extra dependency) so they survive app restarts.
+- Voting and commenting are anonymous. Each install generates one random id (`UserDefaults` key `com.feedbackjar.sdk.anonId`), reset on reinstall. It is not a device id and no IDFV / advertising id is ever sent.
 - Private boards and non-public posts are never returned by `listFeedback`.
 - All methods return a Swift `Result`; nothing throws on network/HTTP errors.
-- No dependencies beyond the Swift standard library and `Foundation`/`UIKit`.
+- No dependencies beyond the Swift standard library and `Foundation`/`UIKit`. The prebuilt UI uses `SwiftUI`, a system framework — still no third-party dependency.
