@@ -207,6 +207,40 @@ internal final class ApiClient: Sendable {
         }
     }
 
+    private func post(from p: PostBody) -> FeedbackPost {
+        FeedbackPost(
+            id: p.id, title: p.title, content: p.content,
+            type: p.type, status: p.status, slug: p.slug,
+            boardId: p.boardId, voteCount: p.voteCount,
+            commentCount: p.commentCount, upvotes: p.upvotes,
+            hasVoted: p.hasVoted ?? false,
+            authorName: p.authorName, createdAt: p.createdAt,
+            updatedAt: p.updatedAt
+        )
+    }
+
+    /// One public post by id — resolves `#[title](postId)` mention jump-links.
+    func getPost(widgetId: String, postId: String) async -> Result<FeedbackPost, Error> {
+        let url = baseURL.appendingPathComponent("widget/\(widgetId)/posts/\(postId)")
+        var request = URLRequest(url: url)
+        applyAppIdHeader(to: &request)
+        applyAnonIdHeader(to: &request)
+
+        do {
+            let (data, response) = try await session.data(for: request)
+            guard let http = response as? HTTPURLResponse else {
+                return .failure(FeedbackJarNetworkError.invalidResponse)
+            }
+            guard (200...299).contains(http.statusCode) else {
+                return .failure(error(from: data, status: http.statusCode))
+            }
+            let parsed = try decoder.decode(PostBody.self, from: data)
+            return .success(post(from: parsed))
+        } catch {
+            return .failure(error)
+        }
+    }
+
     func getConfig(widgetId: String) async -> Result<WidgetConfig, Error> {
         let url = baseURL.appendingPathComponent("widget/\(widgetId)/config")
         var request = URLRequest(url: url)

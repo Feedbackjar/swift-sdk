@@ -126,6 +126,18 @@ public final class FeedbackJar: @unchecked Sendable {
         Task { completion(await listFeedback(boardId: boardId, limit: limit, cursor: cursor)) }
     }
 
+    /// Fetch a single public post by id — used to resolve `#[title](postId)`
+    /// mention jump-links. Same visibility rules as `listFeedback`.
+    public func getPost(_ postId: String) async -> Result<FeedbackPost, Error> {
+        guard let id = widgetId, let client else { return .failure(FeedbackJarError.notInitialized) }
+        return await client.getPost(widgetId: id, postId: postId)
+    }
+
+    /// Callback variant. Safe to call from the main thread.
+    public func getPost(_ postId: String, completion: @escaping @Sendable (Result<FeedbackPost, Error>) -> Void) {
+        Task { completion(await getPost(postId)) }
+    }
+
     /// Fetch this widget's organization config, including whether it asks submitters
     /// for their name/email ("Ask for Name" / "Ask for Email" in the dashboard).
     ///

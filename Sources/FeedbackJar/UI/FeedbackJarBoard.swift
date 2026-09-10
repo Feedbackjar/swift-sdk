@@ -78,7 +78,8 @@ private struct FJBoardScreen: View {
                     post: posts.first(where: { $0.id == post.id }) ?? post,
                     config: config,
                     onBack: { route = .board },
-                    onVoteChange: { upvotes, voted in patch(post.id, upvotes: upvotes, voted: voted) }
+                    onVoteChange: { upvotes, voted in patch(post.id, upvotes: upvotes, voted: voted) },
+                    onPostPress: openPost
                 )
             case .board:
                 boardList(palette)
@@ -149,7 +150,7 @@ private struct FJBoardScreen: View {
                     .font(.system(size: FJFont.body, weight: .bold))
                     .foregroundColor(palette.text)
                     .lineLimit(1)
-                Text(post.content)
+                Text(fjPlainText(post.content))
                     .font(.system(size: FJFont.body))
                     .foregroundColor(palette.textDim)
                     .lineLimit(2)
@@ -188,6 +189,21 @@ private struct FJBoardScreen: View {
             cursor = page.nextCursor
         case .failure(let err):
             error = fjMessage(err)
+        }
+    }
+
+    /// Jump to a post referenced by a `#[title](postId)` mention — use the
+    /// loaded copy if we have it, otherwise fetch it.
+    @MainActor
+    private func openPost(_ postId: String) {
+        if let known = posts.first(where: { $0.id == postId }) {
+            route = .detail(known)
+            return
+        }
+        Task { @MainActor in
+            if case .success(let post) = await FeedbackJar.shared.getPost(postId) {
+                route = .detail(post)
+            }
         }
     }
 

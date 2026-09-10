@@ -7,6 +7,8 @@ struct FJFeedbackDetail: View {
     let config: WidgetConfig
     var onBack: () -> Void
     var onVoteChange: ((Int, Bool) -> Void)?
+    /// Open a post referenced by a `#[…]` mention in the body or a comment.
+    var onPostPress: ((String) -> Void)?
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.fjAccent) private var accent
@@ -59,10 +61,7 @@ struct FJFeedbackDetail: View {
                         .font(.system(size: FJFont.small))
                         .foregroundColor(palette.textDim)
 
-                    Text(post.content)
-                        .font(.system(size: FJFont.body))
-                        .foregroundColor(palette.text)
-                        .fixedSize(horizontal: false, vertical: true)
+                    FJRichText(post.content, onPostPress: onPostPress)
                         .padding(.top, 4)
 
                     Rectangle().fill(palette.divider).frame(height: 0.5).padding(.vertical, 20)
@@ -82,7 +81,8 @@ struct FJFeedbackDetail: View {
                     } else {
                         FJCommentThread(
                             comments: comments,
-                            onReply: config.allowComments ? { replyTarget = $0 } : nil
+                            onReply: config.allowComments ? { replyTarget = $0 } : nil,
+                            onPostPress: onPostPress
                         )
                         if nextCursor != nil {
                             Button(action: loadMore) {

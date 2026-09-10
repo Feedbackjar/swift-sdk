@@ -6,6 +6,7 @@ private struct FJCommentRow: View {
     let comment: FeedbackComment
     let indented: Bool
     let onReply: (() -> Void)?
+    var onPostPress: ((String) -> Void)?
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.fjAccent) private var accent
@@ -14,10 +15,7 @@ private struct FJCommentRow: View {
         let palette = fjPalette(scheme, accent)
         let content = VStack(alignment: .leading, spacing: 4) {
             metaLine(palette)
-            Text(comment.content)
-                .font(.system(size: FJFont.body))
-                .foregroundColor(palette.text)
-                .fixedSize(horizontal: false, vertical: true)
+            FJRichText(comment.content, onPostPress: onPostPress)
             if let onReply {
                 Button("Reply", action: onReply)
                     .font(.system(size: FJFont.small, weight: .bold))
@@ -60,6 +58,8 @@ struct FJCommentThread: View {
     let comments: [FeedbackComment]
     /// Non-nil enables a "Reply" action on root comments.
     var onReply: ((FeedbackComment) -> Void)?
+    /// Open a post referenced by a `#[…]` mention in a comment.
+    var onPostPress: ((String) -> Void)?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 18) {
@@ -68,10 +68,16 @@ struct FJCommentThread: View {
                     FJCommentRow(
                         comment: comment,
                         indented: false,
-                        onReply: onReply.map { handler in { handler(comment) } }
+                        onReply: onReply.map { handler in { handler(comment) } },
+                        onPostPress: onPostPress
                     )
                     ForEach(comment.replies, id: \.id) { reply in
-                        FJCommentRow(comment: reply, indented: true, onReply: nil)
+                        FJCommentRow(
+                            comment: reply,
+                            indented: true,
+                            onReply: nil,
+                            onPostPress: onPostPress
+                        )
                     }
                 }
             }

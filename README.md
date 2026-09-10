@@ -253,6 +253,32 @@ Callback variants exist for both (`listComments(postId:limit:cursor:completion:)
 
 > Rate limits: 10 comment posts per minute per IP.
 
+## Rich text
+
+Post and comment content can contain light Markdown (**bold**, *italic*, `code`,
+`[links](url)`, headings, lists, quotes, fenced code) and FeedbackJar mention
+tokens — `#[Post title](postId)` and `@[Name](user:id)`. `FeedbackJarBoard`
+renders all of this; list previews are flattened to plain text, and tapping a
+`#[…]` reference opens that post's detail screen (fetched via `getPost` when it
+isn't already loaded).
+
+Building your own UI? The renderer and flattener are public — no dependency:
+
+```swift
+FJRichText(post.content) { postId in
+    Task {
+        if case .success(let post) = await FeedbackJar.shared.getPost(postId) {
+            open(post)
+        }
+    }
+}
+
+let preview = fjPlainText(post.content) // for a truncated row
+```
+
+Links (and `[text](url)`) open via the environment's `openURL`; `@[…]` mentions
+are styled but not linked.
+
 ## API reference
 
 ### `FeedbackJar`
@@ -264,6 +290,8 @@ Callback variants exist for both (`listComments(postId:limit:cursor:completion:)
 | `submit(_ content:, email:, name:, properties:, completion:)` | Callback variant, main-thread safe. |
 | `listFeedback(boardId:limit:cursor:) async -> Result<FeedbackListResult, Error>` | List public feedback. `limit` is clamped to 1–50. |
 | `listFeedback(boardId:limit:cursor:completion:)` | Callback variant. |
+| `getPost(_ postId:) async -> Result<FeedbackPost, Error>` | Fetch one public post — resolves `#[…]` mention jump-links. |
+| `getPost(_ postId:completion:)` | Callback variant. |
 | `getConfig() async -> Result<WidgetConfig, Error>` | Fetch org config (name/email prompts, voting, commenting). |
 | `getConfig(completion:)` | Callback variant. |
 | `vote(postId:) async -> Result<VoteState, Error>` | Upvote a post as this install's guest. Idempotent. |
@@ -375,7 +403,7 @@ public struct FeedbackCommentListResult {
 - Feedback can be submitted anonymously, or with a name/email — the SDK never requires either.
 - Name/email are persisted in `UserDefaults` on-device (no extra dependency) so they survive app restarts.
 - Voting and commenting are anonymous. Each install generates one random id (`UserDefaults` key `com.feedbackjar.sdk.anonId`), reset on reinstall. It is not a device id and no IDFV / advertising id is ever sent.
-- Private boards and non-public posts are never returned by `listFeedback`.
+- Private boards and non-public posts are never returned by `listFeedback` or `getPost`.
 - Every request carries an `X-FeedbackJar-SDK: swift/<version>` header; submissions also include `sdk` / `sdkVersion` in metadata.
 - All methods return a Swift `Result`; nothing throws on network/HTTP errors.
 - No dependencies beyond the Swift standard library and `Foundation`/`UIKit`. The prebuilt UI uses `SwiftUI`, a system framework — still no third-party dependency.
