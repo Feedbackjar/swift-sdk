@@ -376,5 +376,6 @@ public struct FeedbackCommentListResult {
 - Name/email are persisted in `UserDefaults` on-device (no extra dependency) so they survive app restarts.
 - Voting and commenting are anonymous. Each install generates one random id (`UserDefaults` key `com.feedbackjar.sdk.anonId`), reset on reinstall. It is not a device id and no IDFV / advertising id is ever sent.
 - Private boards and non-public posts are never returned by `listFeedback`.
+- Every request carries an `X-FeedbackJar-SDK: swift/<version>` header; submissions also include `sdk` / `sdkVersion` in metadata.
 - All methods return a Swift `Result`; nothing throws on network/HTTP errors.
 - No dependencies beyond the Swift standard library and `Foundation`/`UIKit`. The prebuilt UI uses `SwiftUI`, a system framework — still no third-party dependency.

@@ -101,7 +101,13 @@ private extension CommentBody {
 }
 
 internal final class ApiClient: Sendable {
-    private let session = URLSession.shared
+    /// Own session so `X-FeedbackJar-SDK` rides on every request without touching
+    /// each call site.
+    private let session: URLSession = {
+        let config = URLSessionConfiguration.default
+        config.httpAdditionalHeaders = ["X-FeedbackJar-SDK": SDKInfo.identifier]
+        return URLSession(configuration: config)
+    }()
     private let baseURL = URL(string: "https://api.feedbackjar.com")!
     private let decoder = JSONDecoder()
     private let appId: String?

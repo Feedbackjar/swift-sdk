@@ -6,6 +6,8 @@ internal struct DeviceMetadata: Encodable {
     let screen: ScreenInfo
     let locale: LocaleInfo
     let app: [String: JSONValue]
+    let sdk: String
+    let sdkVersion: String
     let timestamp: String
 
     struct OSInfo: Encodable { let name: String; let version: String }
@@ -47,6 +49,8 @@ internal enum MetadataCollector {
                 timezone: TimeZone.current.identifier
             ),
             app: app,
+            sdk: SDKInfo.name,
+            sdkVersion: SDKInfo.version,
             timestamp: ISO8601DateFormatter().string(from: Date())
         )
     }
