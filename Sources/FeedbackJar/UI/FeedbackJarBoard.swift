@@ -81,6 +81,9 @@ private struct FJBoardScreen: View {
                     onVoteChange: { upvotes, voted in patch(post.id, upvotes: upvotes, voted: voted) },
                     onPostPress: openPost
                 )
+                // Fresh @State per post so a jump-link reloads the new post's
+                // comments instead of keeping the previous screen's.
+                .id(post.id)
             case .board:
                 boardList(palette)
             }
