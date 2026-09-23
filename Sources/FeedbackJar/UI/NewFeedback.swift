@@ -6,6 +6,7 @@ import SwiftUI
 struct FJNewFeedback: View {
     let config: WidgetConfig
     var showCancelButton: Bool = true
+    var properties: (() -> [String: Any]?)? = nil
     var onDone: () -> Void
     var onCancel: () -> Void
 
@@ -135,7 +136,8 @@ struct FJNewFeedback: View {
             let result = await FeedbackJar.shared.submit(
                 content,
                 email: submittedEmail,
-                name: submittedName
+                name: submittedName,
+                properties: properties?()
             )
             sending = false
             switch result {

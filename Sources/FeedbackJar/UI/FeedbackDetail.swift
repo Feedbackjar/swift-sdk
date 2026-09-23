@@ -6,6 +6,7 @@ struct FJFeedbackDetail: View {
     let post: FeedbackPost
     let config: WidgetConfig
     var showBackButton: Bool = true
+    var commentIdentity: (() -> (name: String?, email: String?))? = nil
     var onBack: () -> Void
     var onVoteChange: ((Int, Bool) -> Void)?
     /// Open a post referenced by a `#[…]` mention in the body or a comment.
@@ -121,6 +122,11 @@ struct FJFeedbackDetail: View {
             guard !loaded else { return }
             loaded = true
             await load(reset: true)
+            if config.allowVotes,
+                case .success(let state) = await FeedbackJar.shared.voteState(postId: post.id)
+            {
+                onVoteChange?(state.upvotes, state.hasVoted)
+            }
         }
     }
 
@@ -222,11 +228,14 @@ struct FJFeedbackDetail: View {
         guard let content = fjTrimmedOrNil(draft), !sending else { return }
         sending = true
         let parentId = replyTarget?.id
+        let identity = commentIdentity?()
         Task { @MainActor in
             let result = await FeedbackJar.shared.addComment(
                 postId: post.id,
                 content: content,
-                parentId: parentId
+                parentId: parentId,
+                name: identity?.name,
+                email: identity?.email
             )
             sending = false
             switch result {

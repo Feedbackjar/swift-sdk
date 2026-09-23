@@ -22,6 +22,10 @@ public struct FeedbackJarBoard: View {
     private let showBackButton: Bool
     private let isPresentingNewFeedback: Binding<Bool>?
     private let isShowingDetail: Binding<Bool>?
+    private let properties: (() -> [String: Any]?)?
+    private let commentIdentity: (() -> (name: String?, email: String?))?
+    private let resetIdentity: Binding<Bool>?
+    private let openPostId: Binding<String?>?
 
     /// - Parameters:
     ///   - accentColor: the vote state, primary button and links. Defaults to
@@ -49,6 +53,23 @@ public struct FeedbackJarBoard: View {
     ///     whether a post's detail screen is open — `true` the moment a row is
     ///     tapped, `false` again on its own Back. A host can also set it to
     ///     `false` itself (from its own Back button) to leave the detail screen.
+    ///   - properties: called each time the board's own "New" screen sends
+    ///     feedback, to get custom key/value pairs (e.g. `["supportId": "..."]`)
+    ///     merged into the auto-collected metadata. Values should be String,
+    ///     Int, Double, or Bool — nested structures aren't supported. Forwarded
+    ///     verbatim to `FeedbackJar.shared.submit(_:properties:)`.
+    ///   - commentIdentity: called each time a comment is sent from a post's
+    ///     detail screen, to get the name/email to attach to it. Return `nil`
+    ///     fields to fall back to the remembered identity (the default when
+    ///     this is omitted entirely).
+    ///   - resetIdentity: an optional binding a host flips to `true` to forget
+    ///     the remembered submitter identity (e.g. on logout) and refresh the
+    ///     board as a clean anonymous guest. The board clears
+    ///     `FeedbackJar.shared`'s identity, reloads its feed, and flips the
+    ///     binding back to `false`.
+    ///   - openPostId: an optional binding a host sets to a post id to jump the
+    ///     board straight to that post's detail screen (e.g. from a push
+    ///     notification). The board clears it back to `nil` once handled.
     public init(
         accentColor: Color = Color(red: 229.0 / 255.0, green: 72.0 / 255.0, blue: 77.0 / 255.0),
         boardId: String? = nil,
@@ -57,7 +78,11 @@ public struct FeedbackJarBoard: View {
         showCancelButton: Bool = true,
         showBackButton: Bool = true,
         isPresentingNewFeedback: Binding<Bool>? = nil,
-        isShowingDetail: Binding<Bool>? = nil
+        isShowingDetail: Binding<Bool>? = nil,
+        properties: (() -> [String: Any]?)? = nil,
+        commentIdentity: (() -> (name: String?, email: String?))? = nil,
+        resetIdentity: Binding<Bool>? = nil,
+        openPostId: Binding<String?>? = nil
     ) {
         self.accentColor = accentColor
         self.boardId = boardId
@@ -67,13 +92,19 @@ public struct FeedbackJarBoard: View {
         self.showBackButton = showBackButton
         self.isPresentingNewFeedback = isPresentingNewFeedback
         self.isShowingDetail = isShowingDetail
+        self.properties = properties
+        self.commentIdentity = commentIdentity
+        self.resetIdentity = resetIdentity
+        self.openPostId = openPostId
     }
 
     public var body: some View {
         FJBoardScreen(
             boardId: boardId, title: title, showNewButton: showNewButton,
             showCancelButton: showCancelButton, showBackButton: showBackButton,
-            isPresentingNewFeedback: isPresentingNewFeedback, isShowingDetail: isShowingDetail
+            isPresentingNewFeedback: isPresentingNewFeedback, isShowingDetail: isShowingDetail,
+            properties: properties, commentIdentity: commentIdentity,
+            resetIdentity: resetIdentity, openPostId: openPostId
         )
         .environment(\.fjAccent, accentColor)
     }
@@ -95,6 +126,10 @@ private struct FJBoardScreen: View {
     let showBackButton: Bool
     var isPresentingNewFeedback: Binding<Bool>?
     var isShowingDetail: Binding<Bool>?
+    var properties: (() -> [String: Any]?)?
+    var commentIdentity: (() -> (name: String?, email: String?))?
+    var resetIdentity: Binding<Bool>?
+    var openPostId: Binding<String?>?
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.fjAccent) private var accent
@@ -109,6 +144,9 @@ private struct FJBoardScreen: View {
     @State private var loadingMore = false
     @State private var loaded = false
     @State private var error = ""
+    /// Bumped on `resetIdentity` to force a fresh `FJNewFeedback` (fresh
+    /// prefilled name/email) after the remembered identity is cleared.
+    @State private var newFeedbackToken = 0
 
     var body: some View {
         let palette = fjPalette(scheme, accent)
@@ -118,6 +156,7 @@ private struct FJBoardScreen: View {
                 FJNewFeedback(
                     config: config,
                     showCancelButton: showCancelButton,
+                    properties: properties,
                     onDone: {
                         route = .board
                         isPresentingNewFeedback?.wrappedValue = false
@@ -128,11 +167,13 @@ private struct FJBoardScreen: View {
                         isPresentingNewFeedback?.wrappedValue = false
                     }
                 )
+                .id(newFeedbackToken)
             case .detail(let post):
                 FJFeedbackDetail(
                     post: posts.first(where: { $0.id == post.id }) ?? post,
                     config: config,
                     showBackButton: showBackButton,
+                    commentIdentity: commentIdentity,
                     onBack: {
                         route = .board
                         isShowingDetail?.wrappedValue = false
@@ -171,6 +212,25 @@ private struct FJBoardScreen: View {
             if isShowing == false, case .detail = route {
                 route = .board
             }
+        }
+        // A host flips this true to log the submitter out — forget the remembered
+        // identity, drop back to the board, and reload as a clean anonymous guest.
+        .onChange(of: resetIdentity?.wrappedValue) { shouldReset in
+            guard shouldReset == true else { return }
+            FeedbackJar.shared.clearIdentity()
+            newFeedbackToken += 1
+            route = .board
+            isPresentingNewFeedback?.wrappedValue = false
+            isShowingDetail?.wrappedValue = false
+            Task { @MainActor in await load(reset: true) }
+            resetIdentity?.wrappedValue = false
+        }
+        // A host sets this to a post id to jump straight to its detail screen
+        // (e.g. from a push notification); the board clears it back to nil once handled.
+        .onChange(of: openPostId?.wrappedValue) { postId in
+            guard let postId else { return }
+            openPost(postId)
+            openPostId?.wrappedValue = nil
         }
     }
 
@@ -349,19 +409,31 @@ public final class FeedbackJarViewController: UIHostingController<FeedbackJarBoa
     ///   - showNewButton: whether the board's header shows its own "New" button.
     ///   - showCancelButton: whether the "New feedback" screen shows a Cancel button.
     ///   - showBackButton: whether a post's detail screen shows its own "‹ Back" button.
+    ///   - properties: called on each submission to get custom metadata to attach.
+    ///   - commentIdentity: called on each comment to get the name/email to attach.
+    ///   - resetIdentity: a binding a host flips to `true` to forget the remembered
+    ///     submitter identity and refresh the board as a clean anonymous guest.
+    ///   - openPostId: a binding a host sets to a post id to jump straight to its
+    ///     detail screen.
     public init(
         accentColor: Color = Color(red: 229.0 / 255.0, green: 72.0 / 255.0, blue: 77.0 / 255.0),
         boardId: String? = nil,
         title: String? = "Feedback",
         showNewButton: Bool = true,
         showCancelButton: Bool = true,
-        showBackButton: Bool = true
+        showBackButton: Bool = true,
+        properties: (() -> [String: Any]?)? = nil,
+        commentIdentity: (() -> (name: String?, email: String?))? = nil,
+        resetIdentity: Binding<Bool>? = nil,
+        openPostId: Binding<String?>? = nil
     ) {
         super.init(
             rootView: FeedbackJarBoard(
                 accentColor: accentColor, boardId: boardId, title: title,
                 showNewButton: showNewButton, showCancelButton: showCancelButton,
-                showBackButton: showBackButton))
+                showBackButton: showBackButton, properties: properties,
+                commentIdentity: commentIdentity, resetIdentity: resetIdentity,
+                openPostId: openPostId))
     }
 
     @available(*, unavailable)
@@ -390,19 +462,31 @@ public final class FeedbackJarViewController: NSHostingController<FeedbackJarBoa
     ///   - showNewButton: whether the board's header shows its own "New" button.
     ///   - showCancelButton: whether the "New feedback" screen shows a Cancel button.
     ///   - showBackButton: whether a post's detail screen shows its own "‹ Back" button.
+    ///   - properties: called on each submission to get custom metadata to attach.
+    ///   - commentIdentity: called on each comment to get the name/email to attach.
+    ///   - resetIdentity: a binding a host flips to `true` to forget the remembered
+    ///     submitter identity and refresh the board as a clean anonymous guest.
+    ///   - openPostId: a binding a host sets to a post id to jump straight to its
+    ///     detail screen.
     public init(
         accentColor: Color = Color(red: 229.0 / 255.0, green: 72.0 / 255.0, blue: 77.0 / 255.0),
         boardId: String? = nil,
         title: String? = "Feedback",
         showNewButton: Bool = true,
         showCancelButton: Bool = true,
-        showBackButton: Bool = true
+        showBackButton: Bool = true,
+        properties: (() -> [String: Any]?)? = nil,
+        commentIdentity: (() -> (name: String?, email: String?))? = nil,
+        resetIdentity: Binding<Bool>? = nil,
+        openPostId: Binding<String?>? = nil
     ) {
         super.init(
             rootView: FeedbackJarBoard(
                 accentColor: accentColor, boardId: boardId, title: title,
                 showNewButton: showNewButton,
-                showCancelButton: showCancelButton, showBackButton: showBackButton))
+                showCancelButton: showCancelButton, showBackButton: showBackButton,
+                properties: properties, commentIdentity: commentIdentity,
+                resetIdentity: resetIdentity, openPostId: openPostId))
     }
 
     @available(*, unavailable)
