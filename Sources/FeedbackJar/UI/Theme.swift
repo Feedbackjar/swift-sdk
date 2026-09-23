@@ -121,12 +121,12 @@ func fjTrimmedOrNil(_ value: String) -> String? {
 }
 
 /// iOS 16+ can clear the `TextEditor` background; older OSes keep the default.
-/// iOS 16 / macOS 14+ can also drop to `.plain`, which removes the system's own
-/// insets — without it, that inset sits on top of our own padding and the
-/// cursor drifts from where the placeholder text starts.
+/// `.plain` (which removes the system's own insets — without it, that inset sits on top
+/// of our own padding and the cursor drifts from where the placeholder text starts) needs
+/// iOS 17 / macOS 14, one major version ahead of the background clear alone.
 struct FJClearEditorBackground: ViewModifier {
     func body(content: Content) -> some View {
-        if #available(iOS 16.0, macOS 14.0, *) {
+        if #available(iOS 17.0, macOS 14.0, *) {
             content.scrollContentBackground(.hidden).textEditorStyle(.plain)
         } else if #available(iOS 16.0, *) {
             content.scrollContentBackground(.hidden)
@@ -140,6 +140,6 @@ struct FJClearEditorBackground: ViewModifier {
 /// whatever padding we apply ourselves, so the two OS tiers need different padding to land
 /// the cursor in the same place as the placeholder text.
 var fjEditorHasPlainStyle: Bool {
-    if #available(iOS 16.0, macOS 14.0, *) { true } else { false }
+    if #available(iOS 17.0, macOS 14.0, *) { true } else { false }
 }
 #endif

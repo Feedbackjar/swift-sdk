@@ -6,6 +6,6 @@ import Foundation
 /// Keep `version` in sync with the `swift-v*` release tag / `Package.swift`.
 internal enum SDKInfo {
     static let name = "swift"
-    static let version = "1.4.5"
+    static let version = "1.4.6"
     static var identifier: String { "\(name)/\(version)" }
 }
