@@ -5,6 +5,7 @@ import SwiftUI
 struct FJFeedbackDetail: View {
     let post: FeedbackPost
     let config: WidgetConfig
+    var showBackButton: Bool = true
     var onBack: () -> Void
     var onVoteChange: ((Int, Bool) -> Void)?
     /// Open a post referenced by a `#[…]` mention in the body or a comment.
@@ -27,17 +28,19 @@ struct FJFeedbackDetail: View {
     var body: some View {
         let palette = fjPalette(scheme, accent)
         VStack(spacing: 0) {
-            HStack {
-                Button(action: onBack) {
-                    Text("‹ Back")
-                        .font(.system(size: FJFont.body))
-                        .foregroundColor(palette.accent)
+            if showBackButton {
+                HStack {
+                    Button(action: onBack) {
+                        Text("‹ Back")
+                            .font(.system(size: FJFont.body))
+                            .foregroundColor(palette.accent)
+                    }
+                    .buttonStyle(.plain)
+                    Spacer()
                 }
-                .buttonStyle(.plain)
-                Spacer()
+                .padding(.horizontal, 16)
+                .padding(.vertical, 12)
             }
-            .padding(.horizontal, 16)
-            .padding(.vertical, 12)
 
             ScrollView {
                 VStack(alignment: .leading, spacing: 8) {
@@ -150,6 +153,7 @@ struct FJFeedbackDetail: View {
             }
             HStack(alignment: .bottom, spacing: 8) {
                 TextField("Add a comment…", text: $draft)
+                    .textFieldStyle(.plain)
                     .font(.system(size: FJFont.body))
                     .foregroundColor(palette.text)
                     .padding(.horizontal, 12)

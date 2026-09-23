@@ -68,12 +68,35 @@ FeedbackJarBoard(
 )
 ```
 
+### Driving "New feedback" from your own UI
+
+By default the board shows its own "New" button and the submission screen shows
+its own Cancel button. If your host screen has its own button/toolbar action to
+start a submission, or its own way to back out (e.g. a sheet's close control),
+turn either off — `showNewButton` and `showCancelButton` both default to `true`:
+
+```swift
+@State private var isPresentingNewFeedback = false
+
+FeedbackJarBoard(
+    showNewButton: false,
+    showCancelButton: false,
+    isPresentingNewFeedback: $isPresentingNewFeedback
+)
+.toolbar {
+    Button("New") { isPresentingNewFeedback = true }
+}
+```
+
+The board flips `isPresentingNewFeedback` back to `false` on cancel or a
+successful send, so your button and the board's own state always agree.
+
 ### UIKit
 
 Use the `UIHostingController` subclass:
 
 ```swift
-let vc = FeedbackJarViewController()                 // or (accentColor:boardId:)
+let vc = FeedbackJarViewController()                 // or (accentColor:boardId:showNewButton:showCancelButton:)
 navigationController?.pushViewController(vc, animated: true)
 ```
 
@@ -82,7 +105,7 @@ navigationController?.pushViewController(vc, animated: true)
 Same idea, backed by `NSHostingController`:
 
 ```swift
-let vc = FeedbackJarViewController()                  // or (accentColor:boardId:)
+let vc = FeedbackJarViewController()                  // or (accentColor:boardId:showNewButton:showCancelButton:)
 window.contentViewController = vc
 ```
 

@@ -16,22 +16,66 @@ import SwiftUI
 public struct FeedbackJarBoard: View {
     private let accentColor: Color
     private let boardId: String?
+    private let title: String?
+    private let showNewButton: Bool
+    private let showCancelButton: Bool
+    private let showBackButton: Bool
+    private let isPresentingNewFeedback: Binding<Bool>?
+    private let isShowingDetail: Binding<Bool>?
 
     /// - Parameters:
     ///   - accentColor: the vote state, primary button and links. Defaults to
     ///     FeedbackJar red (`#e5484d`).
     ///   - boardId: restrict the feed to a single board.
+    ///   - title: the board header's heading. Defaults to `"Feedback"`; pass
+    ///     your own string to relabel it, or `nil` to hide the heading entirely
+    ///     when the host already titles the surface itself (a window title, a
+    ///     nav bar) and the board's own would just repeat it.
+    ///   - showNewButton: whether the board's header shows a "New" button that
+    ///     opens the submission screen. Defaults to `true`; set `false` when
+    ///     the host drives submission itself (its own toolbar button, say) via
+    ///     `isPresentingNewFeedback`.
+    ///   - showCancelButton: whether the "New feedback" screen shows a Cancel
+    ///     button. Defaults to `true`; set `false` when the host's own chrome
+    ///     already offers a way to back out (e.g. a sheet's own close control).
+    ///   - showBackButton: whether a post's detail screen shows its own "‹
+    ///     Back" button. Defaults to `true`; set `false` when the host drives
+    ///     it back to the list itself via `isShowingDetail`.
+    ///   - isPresentingNewFeedback: an optional binding a host owns to open the
+    ///     submission screen from its own button. The board flips it back to
+    ///     `false` on cancel or successful send, so a host's button and the
+    ///     board's own state always agree.
+    ///   - isShowingDetail: an optional binding the board keeps in sync with
+    ///     whether a post's detail screen is open — `true` the moment a row is
+    ///     tapped, `false` again on its own Back. A host can also set it to
+    ///     `false` itself (from its own Back button) to leave the detail screen.
     public init(
         accentColor: Color = Color(red: 229.0 / 255.0, green: 72.0 / 255.0, blue: 77.0 / 255.0),
-        boardId: String? = nil
+        boardId: String? = nil,
+        title: String? = "Feedback",
+        showNewButton: Bool = true,
+        showCancelButton: Bool = true,
+        showBackButton: Bool = true,
+        isPresentingNewFeedback: Binding<Bool>? = nil,
+        isShowingDetail: Binding<Bool>? = nil
     ) {
         self.accentColor = accentColor
         self.boardId = boardId
+        self.title = title
+        self.showNewButton = showNewButton
+        self.showCancelButton = showCancelButton
+        self.showBackButton = showBackButton
+        self.isPresentingNewFeedback = isPresentingNewFeedback
+        self.isShowingDetail = isShowingDetail
     }
 
     public var body: some View {
-        FJBoardScreen(boardId: boardId)
-            .environment(\.fjAccent, accentColor)
+        FJBoardScreen(
+            boardId: boardId, title: title, showNewButton: showNewButton,
+            showCancelButton: showCancelButton, showBackButton: showBackButton,
+            isPresentingNewFeedback: isPresentingNewFeedback, isShowingDetail: isShowingDetail
+        )
+        .environment(\.fjAccent, accentColor)
     }
 }
 
@@ -45,6 +89,12 @@ private enum FJRoute {
 
 private struct FJBoardScreen: View {
     let boardId: String?
+    let title: String?
+    let showNewButton: Bool
+    let showCancelButton: Bool
+    let showBackButton: Bool
+    var isPresentingNewFeedback: Binding<Bool>?
+    var isShowingDetail: Binding<Bool>?
 
     @Environment(\.colorScheme) private var scheme
     @Environment(\.fjAccent) private var accent
@@ -67,17 +117,26 @@ private struct FJBoardScreen: View {
             case .new:
                 FJNewFeedback(
                     config: config,
+                    showCancelButton: showCancelButton,
                     onDone: {
                         route = .board
+                        isPresentingNewFeedback?.wrappedValue = false
                         Task { @MainActor in await load(reset: true) }
                     },
-                    onCancel: { route = .board }
+                    onCancel: {
+                        route = .board
+                        isPresentingNewFeedback?.wrappedValue = false
+                    }
                 )
             case .detail(let post):
                 FJFeedbackDetail(
                     post: posts.first(where: { $0.id == post.id }) ?? post,
                     config: config,
-                    onBack: { route = .board },
+                    showBackButton: showBackButton,
+                    onBack: {
+                        route = .board
+                        isShowingDetail?.wrappedValue = false
+                    },
                     onVoteChange: { upvotes, voted in patch(post.id, upvotes: upvotes, voted: voted) },
                     onPostPress: openPost
                 )
@@ -97,22 +156,44 @@ private struct FJBoardScreen: View {
             await load(reset: true)
             loading = false
         }
+        // The host's own button flips this; mirror it into `route` so its trigger and the
+        // board's own "New" button (when both exist) land on the same screen.
+        .onChange(of: isPresentingNewFeedback?.wrappedValue) { isPresenting in
+            if isPresenting == true, case .board = route {
+                route = .new
+            } else if isPresenting == false, case .new = route {
+                route = .board
+            }
+        }
+        // A host's own Back button sets this false; mirror it into `route`. It never sets
+        // this true itself — only the board opens a detail screen, by picking the post.
+        .onChange(of: isShowingDetail?.wrappedValue) { isShowing in
+            if isShowing == false, case .detail = route {
+                route = .board
+            }
+        }
     }
 
     private func boardList(_ palette: FJPalette) -> some View {
         ScrollView {
             LazyVStack(spacing: 0) {
-                HStack {
-                    Text("Feedback")
-                        .font(.system(size: FJFont.body, weight: .bold))
-                        .foregroundColor(palette.text)
-                    Spacer()
-                    Button("New") { route = .new }
-                        .font(.system(size: FJFont.body, weight: .bold))
-                        .foregroundColor(palette.accent)
-                        .buttonStyle(.plain)
+                if title != nil || showNewButton {
+                    HStack {
+                        if let title {
+                            Text(title)
+                                .font(.system(size: FJFont.body, weight: .bold))
+                                .foregroundColor(palette.text)
+                        }
+                        Spacer()
+                        if showNewButton {
+                            Button("New") { route = .new }
+                                .font(.system(size: FJFont.body, weight: .bold))
+                                .foregroundColor(palette.accent)
+                                .buttonStyle(.plain)
+                        }
+                    }
+                    .padding(.vertical, 16)
                 }
-                .padding(.vertical, 16)
 
                 if loading {
                     ProgressView().tint(palette.accent).padding(.top, 40)
@@ -125,7 +206,7 @@ private struct FJBoardScreen: View {
                 } else {
                     ForEach(posts, id: \.id) { post in
                         Button {
-                            route = .detail(post)
+                            openDetail(post)
                         } label: {
                             row(post, palette)
                         }
@@ -200,14 +281,20 @@ private struct FJBoardScreen: View {
     @MainActor
     private func openPost(_ postId: String) {
         if let known = posts.first(where: { $0.id == postId }) {
-            route = .detail(known)
+            openDetail(known)
             return
         }
         Task { @MainActor in
             if case .success(let post) = await FeedbackJar.shared.getPost(postId) {
-                route = .detail(post)
+                openDetail(post)
             }
         }
+    }
+
+    @MainActor
+    private func openDetail(_ post: FeedbackPost) {
+        route = .detail(post)
+        isShowingDetail?.wrappedValue = true
     }
 
     @MainActor
@@ -258,11 +345,23 @@ public final class FeedbackJarViewController: UIHostingController<FeedbackJarBoa
     /// - Parameters:
     ///   - accentColor: the accent colour. Defaults to FeedbackJar red (`#e5484d`).
     ///   - boardId: restrict the feed to a single board.
+    ///   - title: the board header's heading. `nil` hides it.
+    ///   - showNewButton: whether the board's header shows its own "New" button.
+    ///   - showCancelButton: whether the "New feedback" screen shows a Cancel button.
+    ///   - showBackButton: whether a post's detail screen shows its own "‹ Back" button.
     public init(
         accentColor: Color = Color(red: 229.0 / 255.0, green: 72.0 / 255.0, blue: 77.0 / 255.0),
-        boardId: String? = nil
+        boardId: String? = nil,
+        title: String? = "Feedback",
+        showNewButton: Bool = true,
+        showCancelButton: Bool = true,
+        showBackButton: Bool = true
     ) {
-        super.init(rootView: FeedbackJarBoard(accentColor: accentColor, boardId: boardId))
+        super.init(
+            rootView: FeedbackJarBoard(
+                accentColor: accentColor, boardId: boardId, title: title,
+                showNewButton: showNewButton, showCancelButton: showCancelButton,
+                showBackButton: showBackButton))
     }
 
     @available(*, unavailable)
@@ -287,11 +386,23 @@ public final class FeedbackJarViewController: NSHostingController<FeedbackJarBoa
     /// - Parameters:
     ///   - accentColor: the accent colour. Defaults to FeedbackJar red (`#e5484d`).
     ///   - boardId: restrict the feed to a single board.
+    ///   - title: the board header's heading. `nil` hides it.
+    ///   - showNewButton: whether the board's header shows its own "New" button.
+    ///   - showCancelButton: whether the "New feedback" screen shows a Cancel button.
+    ///   - showBackButton: whether a post's detail screen shows its own "‹ Back" button.
     public init(
         accentColor: Color = Color(red: 229.0 / 255.0, green: 72.0 / 255.0, blue: 77.0 / 255.0),
-        boardId: String? = nil
+        boardId: String? = nil,
+        title: String? = "Feedback",
+        showNewButton: Bool = true,
+        showCancelButton: Bool = true,
+        showBackButton: Bool = true
     ) {
-        super.init(rootView: FeedbackJarBoard(accentColor: accentColor, boardId: boardId))
+        super.init(
+            rootView: FeedbackJarBoard(
+                accentColor: accentColor, boardId: boardId, title: title,
+                showNewButton: showNewButton,
+                showCancelButton: showCancelButton, showBackButton: showBackButton))
     }
 
     @available(*, unavailable)

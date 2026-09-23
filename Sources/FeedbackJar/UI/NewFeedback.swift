@@ -5,6 +5,7 @@ import SwiftUI
 /// a primary Send button.
 struct FJNewFeedback: View {
     let config: WidgetConfig
+    var showCancelButton: Bool = true
     var onDone: () -> Void
     var onCancel: () -> Void
 
@@ -25,10 +26,15 @@ struct FJNewFeedback: View {
         ScrollView {
             VStack(alignment: .leading, spacing: 12) {
                 HStack {
-                    Button("Cancel", action: onCancel)
-                        .font(.system(size: FJFont.body))
-                        .foregroundColor(palette.textDim)
-                        .buttonStyle(.plain)
+                    if showCancelButton {
+                        Button("Cancel", action: onCancel)
+                            .font(.system(size: FJFont.body))
+                            .foregroundColor(palette.textDim)
+                            .buttonStyle(.plain)
+                    } else {
+                        // Matches the trailing spacer's width, so the title stays centered.
+                        Color.clear.frame(width: 52, height: 1)
+                    }
                     Spacer()
                     Text("New feedback")
                         .font(.system(size: FJFont.body, weight: .bold))
@@ -50,8 +56,10 @@ struct FJNewFeedback: View {
                         .font(.system(size: FJFont.body))
                         .foregroundColor(palette.text)
                         .modifier(FJClearEditorBackground())
-                        .padding(.horizontal, 8)
-                        .padding(.vertical, 4)
+                        // Matches the placeholder's own padding once `.plain` has dropped the
+                        // system inset; older OSes keep the tighter padding that inset needs.
+                        .padding(.horizontal, fjEditorHasPlainStyle ? 12 : 8)
+                        .padding(.vertical, fjEditorHasPlainStyle ? 12 : 4)
                         .frame(minHeight: 120)
                 }
                 .background(RoundedRectangle(cornerRadius: fjRadius).fill(palette.field))
@@ -106,6 +114,7 @@ struct FJNewFeedback: View {
 
     private func field(_ placeholder: String, text: Binding<String>, palette: FJPalette) -> some View {
         TextField(placeholder, text: text)
+            .textFieldStyle(.plain)
             .font(.system(size: FJFont.body))
             .foregroundColor(palette.text)
             .padding(.horizontal, 12)
